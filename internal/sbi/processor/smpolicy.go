@@ -624,6 +624,11 @@ func (p *Processor) HandleUpdateSmPolicyContextRequest(
 	smPolicyDecision := smPolicy.PolicyDecision
 	smPolicyContext := smPolicy.PolicyContext
 	errCause := ""
+	// The response carries only the policies updated by this request (subclause 4.2.4.2 in TS29512)
+	decisionBefore, snapshotErr := snapshotSmPolicyDecision(smPolicyDecision)
+	if snapshotErr != nil {
+		logger.SmPolicyLog.Warnf("SM policy decision snapshot failed, the whole decision is returned: %v", snapshotErr)
+	}
 
 	// For App Session Notification
 	afEventsNotification := models.Pcf_PolAuth_EventsNotification{}
@@ -1009,6 +1014,14 @@ func (p *Processor) HandleUpdateSmPolicyContextRequest(
 	}
 
 	logger.SmPolicyLog.Tracef("SMPolicy smPolicyID[%s] Update", smPolicyId)
+	if snapshotErr == nil {
+		updated, err := updatedSmPolicyDecision(decisionBefore, smPolicyDecision)
+		if err == nil {
+			c.JSON(http.StatusOK, updated)
+			return
+		}
+		logger.SmPolicyLog.Warnf("SM policy decision update failed, the whole decision is returned: %v", err)
+	}
 	c.JSON(http.StatusOK, smPolicyDecision)
 }
 

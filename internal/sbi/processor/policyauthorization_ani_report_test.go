@@ -153,12 +153,15 @@ func TestAniReportOverlappingRequests(t *testing.T) {
 		RefPccRuleIds: []string{"PccRuleId-2"},
 		ReqData:       []models.Pcf_SMPolCtrl_RequestedRuleDataType{models.Pcf_SMPolCtrl_RequestedRuleDataType_USER_LOC_INFO},
 	}}, answered.LastReqRuleData, "the location is still requested")
-	require.Contains(t, answered.PolicyCtrlReqTriggers, anInfoTrigger)
+	require.Empty(t, answered.PolicyCtrlReqTriggers, "the triggers are unchanged")
+	require.Contains(t, sessionA.SmPolicyData.PolicyDecision.PolicyCtrlReqTriggers, anInfoTrigger)
 
-	// Another delayed report answering an earlier time zone request
-	reportAni(t, p, models.Pcf_SMPolCtrl_SmPolicyUpdateContextData{UeTimeZone: "+08:00"})
+	// Another delayed report answering an earlier time zone request: the request is unchanged, so it
+	// is not provided again (only the updated policies are, TS 29.512 clause 4.2.4.2).
+	answered = reportAni(t, p, models.Pcf_SMPolCtrl_SmPolicyUpdateContextData{UeTimeZone: "+08:00"})
 	require.False(t, gock.HasUnmatchedRequest(), "B is not notified without the location")
 	require.Contains(t, sessionB.Events, models.Pcf_PolAuth_AfEvent_ANI_REPORT)
+	require.Equal(t, models.Pcf_SMPolCtrl_SmPolicyDecision{}, answered)
 
 	var gotB models.Pcf_PolAuth_EventsNotification
 	expectAfNotification(aniTestAfURLB, &gotB)
@@ -180,11 +183,14 @@ func TestAniReportIncompleteKeepsWaiting(t *testing.T) {
 	p, appSession := newAniTestSession(t, netLocSuppFeat, netLocSuppFeat)
 	subscribeAni(appSession, aniTestAfURLA, append(reqUserLocation, reqUeTimeZone...))
 
+	decision := appSession.SmPolicyData.PolicyDecision
 	for range 3 {
 		answered := reportAni(t, p, models.Pcf_SMPolCtrl_SmPolicyUpdateContextData{UeTimeZone: "+08:00"})
 		require.False(t, gock.HasUnmatchedRequest(), "not notified without the location")
-		require.Contains(t, answered.PolicyCtrlReqTriggers, anInfoTrigger)
-		require.NotEmpty(t, answered.LastReqRuleData)
+		// The request is kept unchanged, so it is not provided again (TS 29.512 clause 4.2.4.2).
+		require.Equal(t, models.Pcf_SMPolCtrl_SmPolicyDecision{}, answered)
+		require.Contains(t, decision.PolicyCtrlReqTriggers, anInfoTrigger)
+		require.NotEmpty(t, decision.LastReqRuleData)
 	}
 
 	var got models.Pcf_PolAuth_EventsNotification
